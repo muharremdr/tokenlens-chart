@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import logoHorizontal from './assets/logo-horizontal-dark.png'
 
-// TODO: replace with the real newsletter signup URL before launch.
-const NEWSLETTER_URL = 'https://example.com/tokenlens-newsletter'
+const NEWSLETTER_URL = 'https://tokenlens.substack.com/?r=9bmjh3&utm_campaign=pub-share-checklist'
 const REST_COLORS = ['#22D3EE', '#F472B6', '#FACC15', '#34D399', '#FB923C', '#A78BFA', '#60A5FA', '#F87171', '#A3E635', '#E879F9']
 const MAX_ROWS = 10
 const W = 1200
