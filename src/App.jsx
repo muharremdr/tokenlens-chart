@@ -206,7 +206,7 @@ export default function App() {
   const btn = 'rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-200 hover:bg-white/5'
 
   return (
-    <div className="min-h-screen bg-[#060912] text-gray-100 font-sans">
+    <div className="min-h-screen bg-[#0b0f17] text-gray-100 font-sans">
       <header className="px-4 sm:px-8 py-5 border-b border-white/10 flex items-center justify-between">
         <img src={logoHorizontal} alt="tokenlens" className="h-9 w-auto" />
         <div className="text-xs text-gray-400">Tokenomics visual generator</div>
