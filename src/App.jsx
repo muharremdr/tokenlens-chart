@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import logoHorizontal from './assets/logo-horizontal-dark.png'
 
 // TODO: replace with the real newsletter signup URL before launch.
 const NEWSLETTER_URL = 'https://example.com/tokenlens-newsletter'
@@ -208,9 +209,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#060912] text-gray-100 font-sans">
       <header className="px-4 sm:px-8 py-5 border-b border-white/10 flex items-center justify-between">
-        <div className="text-xl font-bold tracking-tight">
-          token<span style={{ color: brand }}>lens</span> chart
-        </div>
+        <img src={logoHorizontal} alt="tokenlens" className="h-9 w-auto" />
         <div className="text-xs text-gray-400">Tokenomics visual generator</div>
       </header>
 
