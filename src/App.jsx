@@ -173,9 +173,13 @@ const SITE_URL = 'https://tokenlens-chart-6wfg.folkapps.com'
 
 // Telegram's in-app webview silently blocks blob: URL downloads (<a download>) and
 // navigator.share is unreliable there, so inside Telegram we hand off to the external browser.
+// telegram-web-app.js defines window.Telegram.WebApp on every site, so presence alone is not enough.
+// Inside a real Telegram mini app, initData is non-empty and platform is set; in a normal browser they are empty/'unknown'.
 function isTelegramWebView() {
   if (typeof window === 'undefined') return false
-  return !!window.Telegram?.WebApp || /Telegram/i.test(navigator.userAgent || '')
+  const wa = window.Telegram?.WebApp
+  if (wa && (wa.initData || (wa.platform && wa.platform !== 'unknown'))) return true
+  return /Telegram/i.test(navigator.userAgent || '')
 }
 
 function openInBrowser() {
