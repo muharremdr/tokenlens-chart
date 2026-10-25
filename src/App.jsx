@@ -171,40 +171,23 @@ function readLogo(file, onOk, onErr) {
 
 const SITE_URL = 'https://tokenlens-chart-6wfg.folkapps.com'
 
-// Telegram's in-app webview silently blocks blob: URL downloads (<a download>).
+// Telegram's in-app webview silently blocks blob: URL downloads (<a download>) and
+// navigator.share is unreliable there, so inside Telegram we hand off to the external browser.
 function isTelegramWebView() {
   if (typeof window === 'undefined') return false
   return !!window.Telegram?.WebApp || /Telegram/i.test(navigator.userAgent || '')
 }
 
-// Returns true when the file was handed to the system share sheet (or the user dismissed it).
-async function shareFile(blob, filename) {
-  try {
-    const file = new File([blob], filename, { type: blob.type })
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename })
-      return true
-    }
-  } catch (e) {
-    if (e && e.name === 'AbortError') return true
-  }
-  return false
-}
-
 function openInBrowser() {
   const wa = window.Telegram?.WebApp
   if (wa && typeof wa.openLink === 'function') {
-    wa.openLink(SITE_URL)
+    wa.openLink(SITE_URL, { try_instant_view: false })
   } else {
     window.open(SITE_URL, '_blank', 'noopener,noreferrer')
   }
 }
 
-function download(blob, filename, onTelegramFail) {
-  if (isTelegramWebView()) {
-    shareFile(blob, filename).then((ok) => { if (!ok) onTelegramFail && onTelegramFail() })
-    return
-  }
+function download(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -221,7 +204,6 @@ export default function App() {
   const [rows, setRows] = useState(EXAMPLE.map(withId))
   const [logo, setLogo] = useState(null)
   const [logoError, setLogoError] = useState('')
-  const [tgNotice, setTgNotice] = useState('')
 
   const setRow = (id, key, value) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)))
   const addRow = () => rows.length < MAX_ROWS && setRows((rs) => [...rs, withId({ label: '', percent: '', vesting: '0', cliff: '0' })])
@@ -258,10 +240,12 @@ export default function App() {
   const slug = slugify(name)
 
   const inTelegram = isTelegramWebView()
-  const onTelegramFail = () => setTgNotice('Sharing is not available here. Use "Open in browser to download" below.')
-  const exportSvg = () => { setTgNotice(''); download(new Blob([svg], { type: 'image/svg+xml' }), `${slug}-tokenomics.svg`, onTelegramFail) }
+  const exportSvg = () => {
+    if (inTelegram) return openInBrowser()
+    download(new Blob([svg], { type: 'image/svg+xml' }), `${slug}-tokenomics.svg`)
+  }
   const exportPng = () => {
-    setTgNotice('')
+    if (inTelegram) return openInBrowser()
     const img = new Image()
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
     img.onload = () => {
@@ -269,7 +253,7 @@ export default function App() {
       canvas.width = 1600
       canvas.height = Math.round((1600 * H) / W)
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-      canvas.toBlob((blob) => download(blob, `${slug}-tokenomics.png`, onTelegramFail), 'image/png')
+      canvas.toBlob((blob) => download(blob, `${slug}-tokenomics.png`), 'image/png')
       URL.revokeObjectURL(url)
     }
     img.src = url
@@ -369,14 +353,17 @@ export default function App() {
             <div className="w-full" dangerouslySetInnerHTML={{ __html: svg }} />
           </div>
           <div className="flex flex-wrap gap-3">
-            <button disabled={!valid} onClick={exportPng} className="rounded-lg px-4 py-2 text-sm font-semibold text-black disabled:opacity-30" style={{ background: brand }}>Download PNG</button>
-            <button disabled={!valid} onClick={exportSvg} className="rounded-lg px-4 py-2 text-sm font-semibold border disabled:opacity-30" style={{ borderColor: brand, color: brand }}>Download SVG</button>
+            {inTelegram ? (
+              <button disabled={!valid} onClick={openInBrowser} className="rounded-lg px-4 py-2 text-sm font-semibold text-black disabled:opacity-30" style={{ background: brand }}>Open in browser to download</button>
+            ) : (
+              <>
+                <button disabled={!valid} onClick={exportPng} className="rounded-lg px-4 py-2 text-sm font-semibold text-black disabled:opacity-30" style={{ background: brand }}>Download PNG</button>
+                <button disabled={!valid} onClick={exportSvg} className="rounded-lg px-4 py-2 text-sm font-semibold border disabled:opacity-30" style={{ borderColor: brand, color: brand }}>Download SVG</button>
+              </>
+            )}
           </div>
           {inTelegram && (
-            <div className="space-y-2 text-sm text-gray-400">
-              <button onClick={openInBrowser} className="underline underline-offset-4 text-gray-200 hover:text-white">Open in browser to download</button>
-              {tgNotice && <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-gray-300">{tgNotice}</div>}
-            </div>
+            <p className="text-xs text-gray-500">Telegram cannot save files directly. The site will open in your browser where downloads work.</p>
           )}
           <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-gray-400">
             <summary className="cursor-pointer text-gray-200">How this is calculated</summary>
