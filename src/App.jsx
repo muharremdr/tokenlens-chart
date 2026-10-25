@@ -4,6 +4,9 @@ import logoHorizontal from './assets/logo-horizontal-dark.png'
 const NEWSLETTER_URL = 'https://tokenlens.substack.com/?r=9bmjh3&utm_campaign=pub-share-checklist'
 const REST_COLORS = ['#22D3EE', '#F472B6', '#FACC15', '#34D399', '#FB923C', '#A78BFA', '#60A5FA', '#F87171', '#A3E635', '#E879F9']
 const MAX_ROWS = 10
+const LOGO_MAX_BYTES = 1024 * 1024
+const LOGO_H = 88
+const LOGO_MAX_W = 260
 const W = 1200
 const H = 870
 
@@ -108,7 +111,9 @@ function areaFrag(model, colors, supply, w, h) {
   return out
 }
 
-function cardSvg({ name, ticker, supply, model, colors, brand }) {
+function cardSvg({ name, ticker, supply, model, colors, brand, logo }) {
+  const logoW = logo ? Math.min(LOGO_MAX_W, Math.round(LOGO_H * logo.ratio)) : 0
+  const tx = logo ? 60 + logoW + 28 : 60
   let legend = ''
   model.forEach((x, i) => {
     const y = 170 + i * 36
@@ -126,8 +131,9 @@ function cardSvg({ name, ticker, supply, model, colors, brand }) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, Arial, sans-serif">
 <rect width="${W}" height="${H}" rx="24" fill="#0B0F1A"/>
 <rect width="${W}" height="6" fill="${brand}"/>
-<text x="60" y="84" font-size="44" font-weight="700" fill="#F9FAFB">${esc(name)}</text>
-<text x="60" y="118" font-size="20" fill="${brand}">${esc(ticker)} tokenomics</text>
+${logo ? `<image x="60" y="36" width="${logoW}" height="${LOGO_H}" preserveAspectRatio="xMinYMid meet" href="${esc(logo.dataUrl)}"/>` : ''}
+<text x="${tx}" y="84" font-size="44" font-weight="700" fill="#F9FAFB">${esc(name)}</text>
+<text x="${tx}" y="118" font-size="20" fill="${brand}">${esc(ticker)} tokenomics</text>
 ${donutFrag(model, colors, supply, ticker, 230, 300, 160, 105)}
 ${legend}
 <text x="60" y="560" font-size="22" font-weight="600" fill="#F9FAFB">Unlock projection (cumulative % of supply)</text>
@@ -135,6 +141,27 @@ ${legend}
 <text x="60" y="812" font-size="16" fill="#E5E7EB">TGE ${a[0]}%  ·  12 months ${a[1]}%  ·  24 months ${a[2]}%  ·  100% at month ${full}</text>
 <text x="60" y="845" font-size="18" fill="#94A3B8">made with tokenlens</text>
 </svg>`
+}
+
+function readLogo(file, onOk, onErr) {
+  const type = file.type || ''
+  const isSvg = type === 'image/svg+xml' || /\.svg$/i.test(file.name)
+  const ok = ['image/png', 'image/jpeg'].includes(type) || isSvg
+  if (!ok) return onErr('Use a PNG, JPG or SVG file.')
+  if (file.size > LOGO_MAX_BYTES) return onErr('Logo must be 1 MB or smaller.')
+  const reader = new FileReader()
+  reader.onload = () => {
+    const dataUrl = reader.result
+    const img = new Image()
+    img.onload = () => {
+      const ratio = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1
+      onOk({ dataUrl, ratio })
+    }
+    img.onerror = () => onErr("Couldn't read that image.")
+    img.src = dataUrl
+  }
+  reader.onerror = () => onErr("Couldn't read that file.")
+  reader.readAsDataURL(file)
 }
 
 function download(blob, filename) {
@@ -152,6 +179,8 @@ export default function App() {
   const [supply, setSupply] = useState('1000000000')
   const [brand, setBrand] = useState('#7C5CFF')
   const [rows, setRows] = useState(EXAMPLE.map(withId))
+  const [logo, setLogo] = useState(null)
+  const [logoError, setLogoError] = useState('')
 
   const setRow = (id, key, value) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)))
   const addRow = () => rows.length < MAX_ROWS && setRows((rs) => [...rs, withId({ label: '', percent: '', vesting: '0', cliff: '0' })])
@@ -184,7 +213,7 @@ export default function App() {
   }))
   const colors = model.map((_, i) => (i === 0 ? brand : REST_COLORS[(i - 1) % REST_COLORS.length]))
   const safeSupply = supplyOk ? supplyNum : 1
-  const svg = cardSvg({ name: name || 'Your Project', ticker: ticker || 'TOKEN', supply: safeSupply, model, colors, brand })
+  const svg = cardSvg({ name: name || 'Your Project', ticker: ticker || 'TOKEN', supply: safeSupply, model, colors, brand, logo })
   const slug = slugify(name)
 
   const exportSvg = () => download(new Blob([svg], { type: 'image/svg+xml' }), `${slug}-tokenomics.svg`)
@@ -219,6 +248,23 @@ export default function App() {
             <label className="block text-sm text-gray-400">Project name / logo text
               <input className={inputCls + ' mt-1'} value={name} onChange={(e) => setName(e.target.value)} />
             </label>
+            <div className="space-y-2">
+              <div className="text-sm text-gray-400">Project logo <span className="text-gray-600">(optional, PNG, JPG or SVG, max 1 MB)</span></div>
+              <div className="flex items-center gap-3">
+                <div className="h-14 w-14 shrink-0 rounded-lg border border-white/10 bg-[#0B0F1A] flex items-center justify-center overflow-hidden">
+                  {logo ? <img src={logo.dataUrl} alt="" className="h-12 w-12 object-contain" /> : <span className="text-xs text-gray-600">none</span>}
+                </div>
+                <label className={btn + ' cursor-pointer'}>{logo ? 'Replace' : 'Upload logo'}
+                  <input type="file" accept="image/png,image/jpeg,image/svg+xml,.svg" className="sr-only" onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ''
+                    if (f) { setLogoError(''); readLogo(f, (l) => setLogo(l), setLogoError) }
+                  }} />
+                </label>
+                {logo && <button className={btn} onClick={() => { setLogo(null); setLogoError('') }}>Remove</button>}
+              </div>
+              {logoError && <div className="text-xs text-red-400">{logoError}</div>}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm text-gray-400">Ticker
                 <input className={inputCls + ' mt-1'} value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} />
