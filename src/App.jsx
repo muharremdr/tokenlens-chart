@@ -1,5 +1,9 @@
 import { useState } from 'react'
 import logoHorizontal from './assets/logo-horizontal-dark.png'
+import tokenlensIconSvg from './assets/tokenlens-icon-dark.svg?raw'
+
+// Inlined as a data URL so the watermark also renders inside downloaded PNG/SVG files.
+const WATERMARK_HREF = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(tokenlensIconSvg)}`
 
 const NEWSLETTER_URL = 'https://tokenlens.substack.com/?r=9bmjh3&utm_campaign=pub-share-checklist'
 const REST_COLORS = ['#22D3EE', '#F472B6', '#FACC15', '#34D399', '#FB923C', '#A78BFA', '#60A5FA', '#F87171', '#A3E635', '#E879F9']
@@ -120,8 +124,8 @@ function cardSvg({ name, ticker, supply, model, colors, brand, logo }) {
     const tok = (supply * x.p) / 100
     legend += `<rect x="460" y="${y - 14}" width="16" height="16" rx="3" fill="${colors[i]}"/>`
     legend += `<text x="486" y="${y}" font-size="18" fill="#E5E7EB">${esc(x.label)}</text>`
-    legend += `<text x="1000" y="${y}" text-anchor="end" font-size="18" fill="#E5E7EB">${round2(x.p)}%</text>`
-    legend += `<text x="1140" y="${y}" text-anchor="end" font-size="16" fill="#94A3B8">${esc(fmt(tok))} ${esc(ticker)}</text>`
+    legend += `<text x="920" y="${y}" text-anchor="end" font-size="18" fill="#E5E7EB">${round2(x.p)}%</text>`
+    legend += `<text x="944" y="${y}" font-size="16" fill="#94A3B8">${esc(fmt(tok))} ${esc(ticker)}</text>`
   })
   const a = [0, 12, 24].map((m) => round2(totalPctAt(model, m, supply)))
   let full = 0
@@ -140,6 +144,7 @@ ${legend}
 <g transform="translate(60,580)">${areaFrag(model, colors, supply, 1080, 200)}</g>
 <text x="60" y="812" font-size="16" fill="#E5E7EB">TGE ${a[0]}%  ·  12 months ${a[1]}%  ·  24 months ${a[2]}%  ·  100% at month ${full}</text>
 <text x="60" y="845" font-size="18" fill="#94A3B8">made with tokenlens</text>
+<image x="232" y="828" width="24" height="24" opacity="0.5" preserveAspectRatio="xMidYMid meet" href="${WATERMARK_HREF}"/>
 </svg>`
 }
 
