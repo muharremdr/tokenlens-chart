@@ -5,6 +5,7 @@ import tokenlensIconSvg from './assets/tokenlens-icon-dark.svg?raw'
 // Inlined as a data URL so the watermark also renders inside downloaded PNG/SVG files.
 const WATERMARK_HREF = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(tokenlensIconSvg)}`
 
+const TELEGRAM_URL = 'https://t.me/tokenlenschart'
 const NEWSLETTER_URL = 'https://tokenlens.substack.com/?r=9bmjh3&utm_campaign=pub-share-checklist'
 const REST_COLORS = ['#22D3EE', '#F472B6', '#FACC15', '#34D399', '#FB923C', '#A78BFA', '#60A5FA', '#F87171', '#A3E635', '#E879F9']
 const MAX_ROWS = 10
@@ -21,6 +22,12 @@ const EXAMPLE = [
   { label: 'Treasury', percent: '15', vesting: '36', cliff: '0' },
   { label: 'Liquidity', percent: '10', vesting: '0', cliff: '0' },
 ]
+
+const TelegramIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor" className="shrink-0">
+    <path d="M9.04 15.47l-.39 5.5c.56 0 .8-.24 1.09-.53l2.62-2.5 5.43 3.97c1 .55 1.7.26 1.97-.92l3.57-16.73c.33-1.53-.55-2.13-1.53-1.76L1.3 9.97c-1.49.58-1.47 1.42-.26 1.8l5.37 1.68 12.47-7.87c.59-.38 1.12-.17.68.21L9.04 15.47z"/>
+  </svg>
+)
 
 let idCounter = 0
 const withId = (r) => ({ id: ++idCounter, ...r })
@@ -364,7 +371,10 @@ export default function App() {
     <div className="min-h-screen bg-[#0b0f17] text-gray-100 font-sans">
       <header className="px-4 sm:px-8 py-5 border-b border-white/10 flex items-center justify-between">
         <img src={logoHorizontal} alt="tokenlens" className="h-9 w-auto" />
-        <div className="text-xs text-gray-400">Tokenomics visual generator</div>
+        <div className="flex items-center gap-4">
+          <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer" aria-label="tokenlens on Telegram" title="tokenlens on Telegram" className="text-gray-400 hover:text-sky-300 transition-colors"><TelegramIcon size={18} /></a>
+          <div className="text-xs text-gray-400">Tokenomics visual generator</div>
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto p-4 sm:p-8 grid gap-8 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
@@ -473,6 +483,7 @@ export default function App() {
       <footer className="border-t border-white/10 px-4 sm:px-8 py-6 text-sm text-gray-400 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
         <div>
           <a href="/" className="font-semibold text-gray-200 hover:underline">made with tokenlens</a>
+          <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer" className="ml-4 inline-flex items-center gap-1.5 text-sky-300 hover:underline"><TelegramIcon size={16} />Join us on Telegram</a>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span>Get the weekly web3 launch and brand teardown newsletter</span>
