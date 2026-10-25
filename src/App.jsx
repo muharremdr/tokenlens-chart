@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import logoHorizontal from './assets/logo-horizontal-dark.png'
 import tokenlensIconSvg from './assets/tokenlens-icon-dark.svg?raw'
 
@@ -182,12 +182,81 @@ function isTelegramWebView() {
   return /Telegram/i.test(navigator.userAgent || '')
 }
 
-function openInBrowser() {
+// Full chart state travels in the URL hash (#s=...) so the external browser opens with the user's inputs.
+// Hash is never sent to the server. Format: "z." + base64url(deflate-raw(JSON)) or "j." + base64url(JSON) when CompressionStream is missing.
+const URL_LIMIT = 3000
+
+const b64urlEncode = (bytes) => {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+const b64urlDecode = (s) => {
+  const padded = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)
+  const bin = atob(padded)
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0))
+}
+
+async function encodeState(snapshot) {
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot))
+  if (typeof CompressionStream === 'undefined') return 'j.' + b64urlEncode(bytes)
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'))
+  return 'z.' + b64urlEncode(new Uint8Array(await new Response(stream).arrayBuffer()))
+}
+
+async function decodeState(payload) {
+  const kind = payload.slice(0, 2)
+  const bytes = b64urlDecode(payload.slice(2))
+  let text
+  if (kind === 'z.') {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
+    text = await new Response(stream).text()
+  } else if (kind === 'j.') {
+    text = new TextDecoder().decode(bytes)
+  } else {
+    throw new Error('unknown state format')
+  }
+  return JSON.parse(text)
+}
+
+// Only accept well-formed values from the hash; anything else is ignored.
+function sanitizeState(s) {
+  if (!s || typeof s !== 'object' || !Array.isArray(s.rows) || s.rows.length === 0) return null
+  const str = (v, d) => (typeof v === 'string' ? v.slice(0, 200) : d)
+  const rows = s.rows.slice(0, MAX_ROWS).map((r) => ({
+    label: str(r?.label, ''),
+    percent: str(r?.percent, ''),
+    vesting: str(r?.vesting, '0'),
+    cliff: str(r?.cliff, '0'),
+  }))
+  const brand = typeof s.brand === 'string' && /^#[0-9a-f]{6}$/i.test(s.brand) ? s.brand : '#7C5CFF'
+  const supply = typeof s.supply === 'string' && /^[0-9.]{1,30}$/.test(s.supply) ? s.supply : '1000000000'
+  const logo = s.logo && typeof s.logo.dataUrl === 'string' && /^data:image\/(png|jpeg|svg\+xml);base64,/.test(s.logo.dataUrl) && Number.isFinite(s.logo.ratio)
+    ? { dataUrl: s.logo.dataUrl, ratio: s.logo.ratio }
+    : null
+  return { name: str(s.name, 'Your Project').slice(0, 120), ticker: str(s.ticker, 'TOKEN').toUpperCase().slice(0, 12), brand, supply, rows, logo }
+}
+
+// Builds the browser URL. Logo is dropped if the URL would exceed URL_LIMIT.
+async function buildBrowserUrl(snapshot) {
+  const full = await encodeState(snapshot)
+  const withLogo = `${SITE_URL}#s=${full}`
+  if (withLogo.length <= URL_LIMIT) return { url: withLogo, logoIncluded: true }
+  if (snapshot.logo) {
+    const noLogo = `${SITE_URL}#s=${await encodeState({ ...snapshot, logo: null })}`
+    if (noLogo.length <= URL_LIMIT) return { url: noLogo, logoIncluded: false }
+  }
+  return { url: SITE_URL, logoIncluded: false, stateIncluded: false }
+}
+
+async function openInBrowser(snapshot) {
+  const { url } = await buildBrowserUrl(snapshot)
   const wa = window.Telegram?.WebApp
   if (wa && typeof wa.openLink === 'function') {
-    wa.openLink(SITE_URL, { try_instant_view: false })
+    wa.openLink(url, { try_instant_view: false })
   } else {
-    window.open(SITE_URL, '_blank', 'noopener,noreferrer')
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 }
 
@@ -208,6 +277,30 @@ export default function App() {
   const [rows, setRows] = useState(EXAMPLE.map(withId))
   const [logo, setLogo] = useState(null)
   const [logoError, setLogoError] = useState('')
+
+  // Restore state from #s=... (set by the Telegram "Open in browser" handoff), then clean the URL.
+  useEffect(() => {
+    const m = window.location.hash.match(/^#s=(.+)$/)
+    if (!m) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const s = sanitizeState(await decodeState(m[1]))
+        if (!s || cancelled) return
+        setName(s.name)
+        setTicker(s.ticker)
+        setBrand(s.brand)
+        setSupply(s.supply)
+        setRows(s.rows.map(withId))
+        setLogo(s.logo)
+      } catch {
+        // Malformed hash: keep the default state.
+      } finally {
+        history.replaceState(null, '', window.location.pathname + window.location.search)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   const setRow = (id, key, value) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)))
   const addRow = () => rows.length < MAX_ROWS && setRows((rs) => [...rs, withId({ label: '', percent: '', vesting: '0', cliff: '0' })])
@@ -244,12 +337,13 @@ export default function App() {
   const slug = slugify(name)
 
   const inTelegram = isTelegramWebView()
+  const snapshot = { name, ticker, brand, supply, rows: rows.map(({ label, percent, vesting, cliff }) => ({ label, percent, vesting, cliff })), logo }
   const exportSvg = () => {
-    if (inTelegram) return openInBrowser()
+    if (inTelegram) return openInBrowser(snapshot)
     download(new Blob([svg], { type: 'image/svg+xml' }), `${slug}-tokenomics.svg`)
   }
   const exportPng = () => {
-    if (inTelegram) return openInBrowser()
+    if (inTelegram) return openInBrowser(snapshot)
     const img = new Image()
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
     img.onload = () => {
@@ -358,7 +452,7 @@ export default function App() {
           </div>
           <div className="flex flex-wrap gap-3">
             {inTelegram ? (
-              <button disabled={!valid} onClick={openInBrowser} className="rounded-lg px-4 py-2 text-sm font-semibold text-black disabled:opacity-30" style={{ background: brand }}>Open in browser to download</button>
+              <button disabled={!valid} onClick={() => openInBrowser(snapshot)} className="rounded-lg px-4 py-2 text-sm font-semibold text-black disabled:opacity-30" style={{ background: brand }}>Open in browser to download</button>
             ) : (
               <>
                 <button disabled={!valid} onClick={exportPng} className="rounded-lg px-4 py-2 text-sm font-semibold text-black disabled:opacity-30" style={{ background: brand }}>Download PNG</button>
