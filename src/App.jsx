@@ -209,10 +209,21 @@ const fmtUsd = (n) => {
   if (a >= 1) return `$${n.toFixed(2)}`
   return `$${n.toFixed(4)}`
 }
+// Market cap display: like fmtUsd, but sub-$1 values keep two decimals ($0.30, not $0.3000).
+const fmtMcap = (n) => (Number.isFinite(n) && Math.abs(n) < 1 ? `$${n.toFixed(2)}` : fmtUsd(n))
 const fmtPct = (n) => (n == null || !Number.isFinite(n) ? '-' : n > 0 && n < 0.01 ? '<0.01%' : `${n.toFixed(2)}%`)
 const numOrNull = (s) => {
   const n = Number(s)
   return s !== '' && Number.isFinite(n) && n >= 0 ? n : null
+}
+// Reads a typed USD amount: "300000000", "300M", "0.3B", "132m", "250k". Returns null if not understood.
+const parseUsdAmount = (s) => {
+  const m = /^(\d+\.?\d*|\.\d+)([kmb])?$/i.exec(String(s || '').trim())
+  if (!m) return null
+  const n = Number(m[1])
+  if (!Number.isFinite(n)) return null
+  const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || '').toLowerCase()] || 1
+  return n * mult
 }
 
 function cardSvg({ name, ticker, supply, model, colors, brand, logo, market }) {
@@ -240,7 +251,7 @@ ${logo ? `<image x="60" y="36" width="${logoW}" height="${LOGO_H}" preserveAspec
 <text x="${tx}" y="118" font-size="20" fill="${brand}">${esc(ticker)} tokenomics</text>
 ${donutFrag(model, colors, supply, ticker, 230, 300, 160, 105)}
 ${legend}
-${market ? `<text x="60" y="540" font-size="16" fill="#94A3B8">Price ${esc(fmtUsd(market.price))}  ·  FDV ${esc(fmtUsd(market.fdv))}${market.mcap != null ? `  ·  Market cap ${esc(fmtUsd(market.mcap))}${market.mcapAuto ? ' (TGE circ.)' : ''}` : ''}  ·  first 12 months unlock ${esc(fmtUsd(market.usd12))} (${esc(fmtPct(market.pct12))} of FDV)</text>` : ''}
+${market ? `<text x="60" y="540" font-size="16" fill="#94A3B8">Price ${esc(fmtUsd(market.price))}  ·  FDV ${esc(fmtUsd(market.fdv))}${market.mcap != null ? `  ·  Market cap ${esc(fmtMcap(market.mcap))}${market.mcapAuto ? ' (TGE circ.)' : ''}` : ''}  ·  first 12 months unlock ${esc(fmtUsd(market.usd12))} (${esc(fmtPct(market.pct12))} of FDV)</text>` : ''}
 <text x="60" y="560" font-size="22" font-weight="600" fill="#F9FAFB">Unlock projection (cumulative % of supply)</text>
 <g transform="translate(60,580)">${areaFrag(model, colors, supply, 1080, 200)}</g>
 <text x="60" y="812" font-size="16" fill="#E5E7EB">TGE ${a[0]}%  ·  12 months ${a[1]}%  ·  24 months ${a[2]}%  ·  100% at month ${full}</text>
@@ -337,7 +348,7 @@ function sanitizeState(s) {
     ? { dataUrl: s.logo.dataUrl, ratio: s.logo.ratio }
     : null
   const price = typeof s.price === 'string' && /^[0-9.]{0,20}$/.test(s.price) ? s.price : ''
-  const marketCap = typeof s.marketCap === 'string' && /^[0-9.]{0,20}$/.test(s.marketCap) ? s.marketCap : ''
+  const marketCap = typeof s.marketCap === 'string' && /^[0-9.kmbKMB]{0,20}$/.test(s.marketCap) ? s.marketCap : ''
   return { name: str(s.name, 'Your Project').slice(0, 120), ticker: str(s.ticker, 'TOKEN').toUpperCase().slice(0, 12), brand, supply, rows, logo, price, marketCap }
 }
 
@@ -465,7 +476,8 @@ export default function App() {
 
   // Dollar layer. FDV = price x total supply (derived). Market cap is optional (user input).
   const priceNum = numOrNull(price)
-  const mcapNum = numOrNull(marketCap)
+  const mcapNum = parseUsdAmount(marketCap)
+  const mcapTyped = marketCap.trim() !== ''
   const marketOn = priceNum !== null && priceNum > 0 && supplyOk
   const fdv = marketOn ? priceNum * safeSupply : null
   const monthly = marketOn ? monthlyUnlocks(model, safeSupply) : []
@@ -584,7 +596,12 @@ export default function App() {
                 <input className={inputCls + ' mt-1'} inputMode="decimal" placeholder="0.05" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} />
               </label>
               <label className="block text-sm text-gray-400">Market cap (USD) <span className="text-gray-600">optional</span>
-                <input className={inputCls + ' mt-1'} inputMode="decimal" placeholder="auto" value={marketCap} onChange={(e) => setMarketCap(e.target.value.replace(/[^0-9.]/g, ''))} />
+                <input className={inputCls + ' mt-1'} inputMode="decimal" placeholder="auto" value={marketCap} onChange={(e) => setMarketCap(e.target.value.replace(/[^0-9.kmbKMB]/g, ''))} />
+                {mcapTyped && (
+                  <span className="block mt-1 text-xs text-gray-500">
+                    {mcapNum !== null && mcapNum > 0 ? `= ${fmtMcap(mcapNum)}` : "couldn't read that, auto is used"}
+                  </span>
+                )}
               </label>
             </div>
             <p className="text-xs text-gray-500">
