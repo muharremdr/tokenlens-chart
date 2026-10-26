@@ -23,6 +23,69 @@ const EXAMPLE = [
   { label: 'Liquidity', percent: '10', vesting: '0', cliff: '0' },
 ]
 
+// One-click example scenarios. Applying one overwrites name, ticker, supply, price and distribution rows.
+// Logo and brand color are kept. Every preset sums to 100% and has cliff <= vesting.
+const PRESETS = [
+  {
+    id: 'cex',
+    label: 'Typical CEX launch',
+    blurb: 'Team, investors, ecosystem, market making',
+    name: 'Nova Protocol', ticker: 'NOVA', supply: '1000000000', price: '0.42',
+    rows: [
+      { label: 'Team', percent: '15', vesting: '36', cliff: '12' },
+      { label: 'Investors', percent: '18', vesting: '24', cliff: '12' },
+      { label: 'Public sale (TGE)', percent: '12', vesting: '0', cliff: '0' },
+      { label: 'Ecosystem and grants', percent: '25', vesting: '48', cliff: '0' },
+      { label: 'Treasury', percent: '15', vesting: '36', cliff: '0' },
+      { label: 'Market making and liquidity', percent: '10', vesting: '0', cliff: '0' },
+      { label: 'Advisors', percent: '5', vesting: '24', cliff: '6' },
+    ],
+  },
+  {
+    id: 'fair',
+    label: 'Fair launch',
+    blurb: 'Half public sale, no VC allocation',
+    name: 'Fairwave', ticker: 'FAIR', supply: '500000000', price: '0.05',
+    rows: [
+      { label: 'Public fair launch', percent: '50', vesting: '0', cliff: '0' },
+      { label: 'Liquidity pool', percent: '20', vesting: '0', cliff: '0' },
+      { label: 'Community rewards', percent: '15', vesting: '24', cliff: '0' },
+      { label: 'Team', percent: '10', vesting: '24', cliff: '12' },
+      { label: 'Treasury', percent: '5', vesting: '24', cliff: '0' },
+    ],
+  },
+  {
+    id: 'vc',
+    label: 'VC heavy',
+    blurb: 'Seed and Series A take the largest share',
+    name: 'Helix Labs', ticker: 'HLX', supply: '1000000000', price: '0.35',
+    rows: [
+      { label: 'Seed round', percent: '20', vesting: '24', cliff: '12' },
+      { label: 'Series A', percent: '18', vesting: '24', cliff: '6' },
+      { label: 'Team', percent: '18', vesting: '36', cliff: '12' },
+      { label: 'Advisors', percent: '4', vesting: '24', cliff: '6' },
+      { label: 'Ecosystem', percent: '15', vesting: '48', cliff: '0' },
+      { label: 'Treasury', percent: '13', vesting: '36', cliff: '0' },
+      { label: 'Public sale', percent: '5', vesting: '0', cliff: '0' },
+      { label: 'Liquidity', percent: '7', vesting: '0', cliff: '0' },
+    ],
+  },
+  {
+    id: 'community',
+    label: 'Community driven',
+    blurb: 'Airdrop, staking rewards and DAO treasury',
+    name: 'Pawpath', ticker: 'PAWS', supply: '10000000000', price: '0.0008',
+    rows: [
+      { label: 'Community airdrop', percent: '30', vesting: '0', cliff: '0' },
+      { label: 'Holder rewards (staking)', percent: '25', vesting: '48', cliff: '0' },
+      { label: 'DAO treasury', percent: '20', vesting: '36', cliff: '0' },
+      { label: 'Liquidity', percent: '10', vesting: '0', cliff: '0' },
+      { label: 'Core team', percent: '10', vesting: '24', cliff: '12' },
+      { label: 'Early contributors', percent: '5', vesting: '12', cliff: '3' },
+    ],
+  },
+]
+
 const TelegramIcon = ({ size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor" className="shrink-0">
     <path d="M9.04 15.47l-.39 5.5c.56 0 .8-.24 1.09-.53l2.62-2.5 5.43 3.97c1 .55 1.7.26 1.97-.92l3.57-16.73c.33-1.53-.55-2.13-1.53-1.76L1.3 9.97c-1.49.58-1.47 1.42-.26 1.8l5.37 1.68 12.47-7.87c.59-.38 1.12-.17.68.21L9.04 15.47z"/>
@@ -356,6 +419,18 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
+  // Presets overwrite name, ticker, supply, price, market cap and distribution. Logo and brand color stay.
+  const applyPreset = (p) => {
+    setName(p.name)
+    setTicker(p.ticker)
+    setSupply(p.supply)
+    setPrice(p.price)
+    setMarketCap('')
+    setRows(p.rows.map(withId))
+    setShareMsg('')
+    setShareLink('')
+  }
+
   const setRow = (id, key, value) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [key]: value } : r)))
   const addRow = () => rows.length < MAX_ROWS && setRows((rs) => [...rs, withId({ label: '', percent: '', vesting: '0', cliff: '0' })])
   const removeRow = (id) => rows.length > 1 && setRows((rs) => rs.filter((r) => r.id !== id))
@@ -456,6 +531,21 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto p-4 sm:p-8 grid gap-8 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         <section className="space-y-6">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
+            <div>
+              <h2 className="font-semibold">Start from a template</h2>
+              <p className="text-xs text-gray-500 mt-1">Fills name, ticker, supply, price and distribution. Your logo and brand color stay.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {PRESETS.map((p) => (
+                <button key={p.id} type="button" onClick={() => applyPreset(p)} className="text-left rounded-xl border border-white/10 bg-[#0B0F1A] px-3 py-2.5 hover:border-white/30 hover:bg-white/5 transition-colors">
+                  <div className="text-sm font-semibold text-gray-100">{p.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{p.blurb}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
             <h2 className="font-semibold">Project</h2>
             <label className="block text-sm text-gray-400">Project name / logo text
