@@ -122,7 +122,37 @@ function areaFrag(model, colors, supply, w, h) {
   return out
 }
 
-function cardSvg({ name, ticker, supply, model, colors, brand, logo }) {
+// Tokens unlocked during each month (month 0 = TGE). Stops at the last month any row is still vesting.
+const MAX_MARKET_MONTHS = 240
+function monthlyUnlocks(model, supply) {
+  const last = Math.min(MAX_MARKET_MONTHS, Math.max(0, ...model.map((x) => Math.max(x.c, x.v))))
+  const out = []
+  let prev = 0
+  for (let m = 0; m <= last; m++) {
+    const cum = model.reduce((s, x) => s + unlockedAt(x, m, supply), 0)
+    out.push({ m, tokens: cum - prev })
+    prev = cum
+  }
+  return out
+}
+
+// USD helpers for the market layer.
+const fmtUsd = (n) => {
+  if (!Number.isFinite(n)) return '-'
+  const a = Math.abs(n)
+  if (a >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
+  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
+  if (a >= 1e3) return `$${(n / 1e3).toFixed(1)}K`
+  if (a >= 1) return `$${n.toFixed(2)}`
+  return `$${n.toFixed(4)}`
+}
+const fmtPct = (n) => (n == null || !Number.isFinite(n) ? '-' : n > 0 && n < 0.01 ? '<0.01%' : `${n.toFixed(2)}%`)
+const numOrNull = (s) => {
+  const n = Number(s)
+  return s !== '' && Number.isFinite(n) && n >= 0 ? n : null
+}
+
+function cardSvg({ name, ticker, supply, model, colors, brand, logo, market }) {
   const logoW = logo ? Math.min(LOGO_MAX_W, Math.round(LOGO_H * logo.ratio)) : 0
   const tx = logo ? 60 + logoW + 28 : 60
   let legend = ''
@@ -147,6 +177,7 @@ ${logo ? `<image x="60" y="36" width="${logoW}" height="${LOGO_H}" preserveAspec
 <text x="${tx}" y="118" font-size="20" fill="${brand}">${esc(ticker)} tokenomics</text>
 ${donutFrag(model, colors, supply, ticker, 230, 300, 160, 105)}
 ${legend}
+${market ? `<text x="60" y="540" font-size="16" fill="#94A3B8">Price ${esc(fmtUsd(market.price))}  ·  FDV ${esc(fmtUsd(market.fdv))}${market.mcap ? `  ·  Market cap ${esc(fmtUsd(market.mcap))}` : ''}  ·  first 12 months unlock ${esc(fmtUsd(market.usd12))} (${esc(fmtPct(market.pct12))} of FDV)</text>` : ''}
 <text x="60" y="560" font-size="22" font-weight="600" fill="#F9FAFB">Unlock projection (cumulative % of supply)</text>
 <g transform="translate(60,580)">${areaFrag(model, colors, supply, 1080, 200)}</g>
 <text x="60" y="812" font-size="16" fill="#E5E7EB">TGE ${a[0]}%  ·  12 months ${a[1]}%  ·  24 months ${a[2]}%  ·  100% at month ${full}</text>
@@ -242,7 +273,9 @@ function sanitizeState(s) {
   const logo = s.logo && typeof s.logo.dataUrl === 'string' && /^data:image\/(png|jpeg|svg\+xml);base64,/.test(s.logo.dataUrl) && Number.isFinite(s.logo.ratio)
     ? { dataUrl: s.logo.dataUrl, ratio: s.logo.ratio }
     : null
-  return { name: str(s.name, 'Your Project').slice(0, 120), ticker: str(s.ticker, 'TOKEN').toUpperCase().slice(0, 12), brand, supply, rows, logo }
+  const price = typeof s.price === 'string' && /^[0-9.]{0,20}$/.test(s.price) ? s.price : ''
+  const marketCap = typeof s.marketCap === 'string' && /^[0-9.]{0,20}$/.test(s.marketCap) ? s.marketCap : ''
+  return { name: str(s.name, 'Your Project').slice(0, 120), ticker: str(s.ticker, 'TOKEN').toUpperCase().slice(0, 12), brand, supply, rows, logo, price, marketCap }
 }
 
 // Builds the browser URL. Logo is dropped if the URL would exceed URL_LIMIT.
@@ -255,6 +288,14 @@ async function buildBrowserUrl(snapshot) {
     if (noLogo.length <= URL_LIMIT) return { url: noLogo, logoIncluded: false }
   }
   return { url: SITE_URL, logoIncluded: false, stateIncluded: false }
+}
+
+// Shareable link: same #s= state as the Telegram handoff, always without the logo.
+// Built from the current page address so it works on both the folkapps and GitHub Pages URLs.
+async function buildShareUrl(snapshot) {
+  const base = window.location.href.split('#')[0]
+  const url = `${base}#s=${await encodeState({ ...snapshot, logo: null })}`
+  return url.length <= URL_LIMIT ? { url, ok: true } : { url, ok: false }
 }
 
 async function openInBrowser(snapshot) {
@@ -284,8 +325,12 @@ export default function App() {
   const [rows, setRows] = useState(EXAMPLE.map(withId))
   const [logo, setLogo] = useState(null)
   const [logoError, setLogoError] = useState('')
+  const [price, setPrice] = useState('')
+  const [marketCap, setMarketCap] = useState('')
+  const [shareLink, setShareLink] = useState('')
+  const [shareMsg, setShareMsg] = useState('')
 
-  // Restore state from #s=... (set by the Telegram "Open in browser" handoff), then clean the URL.
+  // Restore state from #s=... (set by the Telegram "Open in browser" handoff or a shared link), then clean the URL.
   useEffect(() => {
     const m = window.location.hash.match(/^#s=(.+)$/)
     if (!m) return
@@ -300,6 +345,8 @@ export default function App() {
         setSupply(s.supply)
         setRows(s.rows.map(withId))
         setLogo(s.logo)
+        setPrice(s.price)
+        setMarketCap(s.marketCap)
       } catch {
         // Malformed hash: keep the default state.
       } finally {
@@ -340,11 +387,22 @@ export default function App() {
   }))
   const colors = model.map((_, i) => (i === 0 ? brand : REST_COLORS[(i - 1) % REST_COLORS.length]))
   const safeSupply = supplyOk ? supplyNum : 1
-  const svg = cardSvg({ name: name || 'Your Project', ticker: ticker || 'TOKEN', supply: safeSupply, model, colors, brand, logo })
+
+  // Dollar layer. FDV = price x total supply (derived). Market cap is optional (user input).
+  const priceNum = numOrNull(price)
+  const mcapNum = numOrNull(marketCap)
+  const marketOn = priceNum !== null && priceNum > 0 && supplyOk
+  const fdv = marketOn ? priceNum * safeSupply : null
+  const monthly = marketOn ? monthlyUnlocks(model, safeSupply) : []
+  const usd12 = monthly.filter((r) => r.m <= 12).reduce((s, r) => s + r.tokens * priceNum, 0)
+  const market = marketOn
+    ? { price: priceNum, fdv, mcap: mcapNum && mcapNum > 0 ? mcapNum : null, usd12, pct12: (usd12 / fdv) * 100 }
+    : null
+  const svg = cardSvg({ name: name || 'Your Project', ticker: ticker || 'TOKEN', supply: safeSupply, model, colors, brand, logo, market })
   const slug = slugify(name)
 
   const inTelegram = isTelegramWebView()
-  const snapshot = { name, ticker, brand, supply, rows: rows.map(({ label, percent, vesting, cliff }) => ({ label, percent, vesting, cliff })), logo }
+  const snapshot = { name, ticker, brand, supply, rows: rows.map(({ label, percent, vesting, cliff }) => ({ label, percent, vesting, cliff })), logo, price, marketCap }
   const exportSvg = () => {
     if (inTelegram) return openInBrowser(snapshot)
     download(new Blob([svg], { type: 'image/svg+xml' }), `${slug}-tokenomics.svg`)
@@ -362,6 +420,21 @@ export default function App() {
       URL.revokeObjectURL(url)
     }
     img.src = url
+  }
+  const shareChart = async () => {
+    try {
+      const { url, ok } = await buildShareUrl(snapshot)
+      if (!ok) return setShareMsg('Too much data for a link. Remove a row or two.')
+      setShareLink(url)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+        setShareMsg('Link copied. Logo is not included.')
+      } else {
+        setShareMsg('Copy the link below. Logo is not included.')
+      }
+    } catch {
+      setShareMsg('Could not create the link here. Copy the address bar instead.')
+    }
   }
 
   const inputCls = 'w-full rounded-lg bg-[#0B0F1A] border border-white/10 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-white/40'
@@ -412,6 +485,17 @@ export default function App() {
             <label className="block text-sm text-gray-400">Total token supply
               <input className={inputCls + ' mt-1'} inputMode="numeric" value={supply} onChange={(e) => setSupply(e.target.value.replace(/[^0-9.]/g, ''))} />
             </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm text-gray-400">Token price (USD) <span className="text-gray-600">optional</span>
+                <input className={inputCls + ' mt-1'} inputMode="decimal" placeholder="0.05" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))} />
+              </label>
+              <label className="block text-sm text-gray-400">Market cap (USD) <span className="text-gray-600">optional</span>
+                <input className={inputCls + ' mt-1'} inputMode="decimal" placeholder="auto" value={marketCap} onChange={(e) => setMarketCap(e.target.value.replace(/[^0-9.]/g, ''))} />
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">
+              {priceNum > 0 && supplyOk ? `FDV ${fmtUsd(fdv)}` : 'Enter a price to see FDV and the USD value of each unlock.'}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
@@ -472,6 +556,42 @@ export default function App() {
           </div>
           {inTelegram && (
             <p className="text-xs text-gray-500">Telegram cannot save files directly. The site will open in your browser where downloads work.</p>
+          )}
+          {market && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-semibold text-sm">Monthly unlock value</h2>
+                <button className={btn} disabled={!valid} onClick={shareChart}>Share link</button>
+              </div>
+              {shareMsg && <div className="text-xs text-gray-400">{shareMsg}</div>}
+              {shareLink && (
+                <input readOnly className={inputCls} value={shareLink} onFocus={(e) => e.target.select()} />
+              )}
+              <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                <table className="w-full text-xs text-gray-300">
+                  <thead className="text-gray-500 text-left">
+                    <tr><th className="py-1 pr-2">Month</th><th className="py-1 pr-2">Tokens</th><th className="py-1 pr-2">USD</th><th className="py-1 text-right">% FDV</th></tr>
+                  </thead>
+                  <tbody>
+                    {monthly.map((r) => (
+                      <tr key={r.m} className="border-t border-white/5">
+                        <td className="py-1 pr-2">{r.m}</td>
+                        <td className="py-1 pr-2">{fmt(r.tokens)}</td>
+                        <td className="py-1 pr-2">{fmtUsd(r.tokens * priceNum)}</td>
+                        <td className="py-1 text-right">{fmtPct((r.tokens / safeSupply) * 100)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!valid && <div className="text-xs text-gray-500">Fix the errors above to share.</div>}
+            </div>
+          )}
+          {!market && (
+            <div className="flex flex-wrap gap-3">
+              <button className={btn} disabled={!valid} onClick={shareChart}>Share link</button>
+              {shareMsg && <span className="text-xs text-gray-400 self-center">{shareMsg}</span>}
+            </div>
           )}
           <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-gray-400">
             <summary className="cursor-pointer text-gray-200">How this is calculated</summary>
