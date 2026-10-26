@@ -177,7 +177,7 @@ ${logo ? `<image x="60" y="36" width="${logoW}" height="${LOGO_H}" preserveAspec
 <text x="${tx}" y="118" font-size="20" fill="${brand}">${esc(ticker)} tokenomics</text>
 ${donutFrag(model, colors, supply, ticker, 230, 300, 160, 105)}
 ${legend}
-${market ? `<text x="60" y="540" font-size="16" fill="#94A3B8">Price ${esc(fmtUsd(market.price))}  ·  FDV ${esc(fmtUsd(market.fdv))}${market.mcap ? `  ·  Market cap ${esc(fmtUsd(market.mcap))}` : ''}  ·  first 12 months unlock ${esc(fmtUsd(market.usd12))} (${esc(fmtPct(market.pct12))} of FDV)</text>` : ''}
+${market ? `<text x="60" y="540" font-size="16" fill="#94A3B8">Price ${esc(fmtUsd(market.price))}  ·  FDV ${esc(fmtUsd(market.fdv))}${market.mcap != null ? `  ·  Market cap ${esc(fmtUsd(market.mcap))}${market.mcapAuto ? ' (TGE circ.)' : ''}` : ''}  ·  first 12 months unlock ${esc(fmtUsd(market.usd12))} (${esc(fmtPct(market.pct12))} of FDV)</text>` : ''}
 <text x="60" y="560" font-size="22" font-weight="600" fill="#F9FAFB">Unlock projection (cumulative % of supply)</text>
 <g transform="translate(60,580)">${areaFrag(model, colors, supply, 1080, 200)}</g>
 <text x="60" y="812" font-size="16" fill="#E5E7EB">TGE ${a[0]}%  ·  12 months ${a[1]}%  ·  24 months ${a[2]}%  ·  100% at month ${full}</text>
@@ -395,8 +395,12 @@ export default function App() {
   const fdv = marketOn ? priceNum * safeSupply : null
   const monthly = marketOn ? monthlyUnlocks(model, safeSupply) : []
   const usd12 = monthly.filter((r) => r.m <= 12).reduce((s, r) => s + r.tokens * priceNum, 0)
+  // Market cap: user input wins; otherwise price x tokens unlocked at TGE (the float that trades).
+  const tgeTokens = marketOn ? model.reduce((s, x) => s + unlockedAt(x, 0, safeSupply), 0) : 0
+  const mcapAuto = marketOn && !(mcapNum && mcapNum > 0)
+  const mcapValue = mcapAuto ? priceNum * tgeTokens : mcapNum
   const market = marketOn
-    ? { price: priceNum, fdv, mcap: mcapNum && mcapNum > 0 ? mcapNum : null, usd12, pct12: (usd12 / fdv) * 100 }
+    ? { price: priceNum, fdv, mcap: mcapValue, mcapAuto, usd12, pct12: (usd12 / fdv) * 100 }
     : null
   const svg = cardSvg({ name: name || 'Your Project', ticker: ticker || 'TOKEN', supply: safeSupply, model, colors, brand, logo, market })
   const slug = slugify(name)
